@@ -149,7 +149,19 @@ angular.module('highcharts-ng', [])
               if (s.visible !== undefined && chartSeries.visible !== s.visible) {
                 chartSeries.setVisible(s.visible, false);
               }
-              if (chartSeries.options.data !== s.data) {
+              // oh dear. chartSeries.setData(s.data) does chartSeries.options.data = s.data;
+              // so if somebody later mutates s.data, chartSeries.options.data changes too.
+              // We can't compare to chartSeries.data because it is an array of Points instead of
+              // an array of arrays.
+              // WE'LL FUDGE IT
+              var dirty = (chartSeries.options.data !== s.data) || (chartSeries.data.length !== s.data.length);
+              if (!dirty && (chartSeries.data.length > 0)) {
+                  // extra checks
+                  var lastIx = chartSeries.data.length - 1;
+                  dirty = (chartSeries.data[lastIx].x !== s.data[lastIx][0]) || (chartSeries.data[lastIx].y !== s.data[lastIx][1]);
+                  dirty = dirty || (chartSeries.data[0].x !== s.data[0][0]) || (chartSeries.data[0].y !== s.data[0][1]);
+              }
+              if (dirty) {
                 chartSeries.setData(s.data, false);
               }
             }
