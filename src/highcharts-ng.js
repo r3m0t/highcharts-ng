@@ -132,6 +132,10 @@ angular.module('highcharts-ng', [])
       }
     };
 
+    var axisOptionsWithoutEasyOptions = function (options) {
+      return angular.extend({}, options, {plotBands: null, plotLines: null});
+    };
+
     var chartOptionsWithoutEasyOptions = function (options) {
       return angular.extend({}, options, {data: null, visible: null});
     };
@@ -146,6 +150,35 @@ angular.module('highcharts-ng', [])
       link: function (scope, element, attrs) {
         // We keep some chart-specific variables here as a closure
         // instead of storing them on 'scope'.
+
+        // prevAxesOptions is maintained by processAxis
+        var prevAxesOptions = {};
+
+        var processAxis = function(newAxisOptions, axisName) {
+          var redraw = false;
+          var axis = chart[axisName][0];
+          var strippedOptions = axisOptionsWithoutEasyOptions(newAxisOptions);
+          if (!angular.equals(prevAxesOptions[axisName], strippedOptions)) {
+            axis.update(angular.copy(newAxisOptions), false);
+            // Axis loves to edit the options object we pass in (e.g. Axis.removePlotBandOrLine)
+            // so we pass it a copy
+            updateZoom(axis, newAxisOptions);
+            prevAxesOptions[axisName] = strippedOptions;
+            redraw = true;
+          } else {
+            // remove all PlotBandOrLines and add the new ones
+            for (var i = 0; i < axis.plotLinesAndBands.length; i++) {
+              axis.removePlotBandOrLine(axis.plotLinesAndBands[i].id);
+            }
+            angular.forEach(['plotBands', 'plotLines'], function (coll) {
+              if (!newAxisOptions.hasOwnProperty(coll)) { return; }
+              for (var i = 0; i < newAxisOptions[coll].length; i++) {
+                axis.addPlotBandOrLine(newAxisOptions[coll][i], coll);
+              }
+            });
+          }
+          return redraw;
+        }
 
         // prevSeriesOptions is maintained by processSeries
         var prevSeriesOptions = {};
@@ -251,9 +284,9 @@ angular.module('highcharts-ng', [])
           scope.$watch('config.' + axisName, function (newAxes, oldAxes) {
             if (newAxes === oldAxes) return;
             if(newAxes) {
-              chart[axisName][0].update(newAxes, false);
-              updateZoom(chart[axisName][0], angular.copy(newAxes));
-              chart.redraw();
+              if (processAxis(newAxes, axisName)) {
+                chart.redraw();
+              }
             }
           }, true);
         });
