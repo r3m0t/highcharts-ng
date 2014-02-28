@@ -112,6 +112,12 @@ angular.module('highcharts-ng', []).directive('highchart', function () {
       chart[axisName][0].setExtremes(axis.currentMin, axis.currentMax, true);
     }
   };
+  var axisOptionsWithoutEasyOptions = function (options) {
+    return angular.extend({}, options, {
+      plotBands: null,
+      plotLines: null
+    });
+  };
   var chartOptionsWithoutEasyOptions = function (options) {
     return angular.extend({}, options, {
       data: null,
@@ -124,6 +130,34 @@ angular.module('highcharts-ng', []).directive('highchart', function () {
     template: '<div></div>',
     scope: { config: '=' },
     link: function (scope, element, attrs) {
+      var prevAxesOptions = {};
+      var processAxis = function (newAxisOptions, axisName) {
+        var redraw = false;
+        var axis = chart[axisName][0];
+        var strippedOptions = axisOptionsWithoutEasyOptions(newAxisOptions);
+        if (!angular.equals(prevAxesOptions[axisName], strippedOptions)) {
+          axis.update(angular.copy(newAxisOptions), false);
+          updateZoom(axis, newAxisOptions);
+          prevAxesOptions[axisName] = strippedOptions;
+          redraw = true;
+        } else {
+          for (var i = 0; i < axis.plotLinesAndBands.length; i++) {
+            axis.removePlotBandOrLine(axis.plotLinesAndBands[i].id);
+          }
+          angular.forEach([
+            'plotBands',
+            'plotLines'
+          ], function (coll) {
+            if (!newAxisOptions.hasOwnProperty(coll)) {
+              return;
+            }
+            for (var i = 0; i < newAxisOptions[coll].length; i++) {
+              axis.addPlotBandOrLine(newAxisOptions[coll][i], coll);
+            }
+          });
+        }
+        return redraw;
+      };
       var prevSeriesOptions = {};
       var processSeries = function (series) {
         var ids = [];
@@ -142,9 +176,7 @@ angular.module('highcharts-ng', []).directive('highchart', function () {
                 if (s.visible !== undefined && chartSeries.visible !== s.visible) {
                   chartSeries.setVisible(s.visible, false);
                 }
-                if (chartSeries.options.data !== s.data) {
-                  chartSeries.setData(angular.copy(s.data), false);
-                }
+                chartSeries.setData(angular.copy(s.data), false);
               }
             } else {
               chart.addSeries(angular.copy(s), false);
@@ -164,6 +196,8 @@ angular.module('highcharts-ng', []).directive('highchart', function () {
       var initChart = function () {
         if (chart)
           chart.destroy();
+        prevSeriesOptions = {};
+        prevAxesOptions = {};
         var config = scope.config || {};
         var mergedOptions = getMergedOptions(scope, element, config);
         chart = config.useHighStocks ? new Highcharts.StockChart(mergedOptions) : new Highcharts.Chart(mergedOptions);
@@ -178,8 +212,8 @@ angular.module('highcharts-ng', []).directive('highchart', function () {
       };
       initChart();
       scope.$watch('config.series', function (newSeries, oldSeries) {
-        var changed = processSeries(newSeries);
-        if (changed) {
+        var needsRedraw = processSeries(newSeries);
+        if (needsRedraw) {
           chart.redraw();
         }
       }, true);
@@ -211,9 +245,9 @@ angular.module('highcharts-ng', []).directive('highchart', function () {
           if (newAxes === oldAxes)
             return;
           if (newAxes) {
-            chart[axisName][0].update(newAxes, false);
-            updateZoom(chart[axisName][0], angular.copy(newAxes));
-            chart.redraw();
+            if (processAxis(newAxes, axisName)) {
+              chart.redraw();
+            }
           }
         }, true);
       });
